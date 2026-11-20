@@ -1,6 +1,6 @@
 # ProLaw AI
 
-ProLaw AI is an English-language MVP of an AI-powered adaptive legal learning and case-simulation platform. It helps law students and legal professionals identify knowledge gaps and practise decisions in criminal law and criminal procedure.
+ProLaw AI is an English-language legal learning MVP. It helps law students practise criminal law through expert-prepared assessments and case studies.
 
 ## Live demo
 
@@ -10,13 +10,14 @@ ProLaw AI is an English-language MVP of an AI-powered adaptive legal learning an
 
 ## MVP features
 
-- Adaptive three-question legal assessment
-- Topic-level knowledge-gap analysis
-- Personalized learning recommendations
-- Three-stage interactive investigation case
-- Immediate expert-guided decision feedback
-- Responsive dashboard for desktop and mobile
-- Educational-use disclaimer
+- 100 criminal-law questions with expert answer keys
+- General Part, Special Part and mixed assessment modes
+- Configurable 10, 25 or 50-question test sessions
+- Random question selection and automatic scoring
+- Detailed answer review after each completed assessment
+- 10 legal case studies with expert qualification and reasoning
+- Browser-based progress history for pilot testing
+- Responsive interface for desktop and mobile
 
 ## Technology
 
@@ -49,7 +50,7 @@ pnpm build
 
 ## Important notice
 
-This prototype is designed for education. It does not provide legal advice and does not replace official legislation or professional legal review. Demo cases are simplified and must be expert-verified before production use.
+This prototype is designed for education. It does not provide legal advice and does not replace official legislation or professional legal review. The legal team remains responsible for reviewing the content against current legislation before a public production release.
 
 ## License
 

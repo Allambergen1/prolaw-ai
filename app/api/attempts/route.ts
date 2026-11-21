@@ -1,8 +1,8 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getCurrentUser } from "@/app/current-user";
 import { database, ensurePilotSchema } from "@/db/pilot";
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
   await ensurePilotSchema();
   const tests = await database().prepare("SELECT * FROM test_attempts WHERE user_id = ? ORDER BY completed_at DESC LIMIT 30").bind(user.userId).all();
@@ -11,7 +11,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
   const body = await request.json() as Record<string, unknown>;
   const mode = String(body.mode ?? "");

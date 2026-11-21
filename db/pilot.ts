@@ -39,6 +39,12 @@ export async function ensurePilotSchema() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS pilot_sessions (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pilot_sessions_user ON pilot_sessions(user_id);
     CREATE TABLE IF NOT EXISTS test_attempts (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,

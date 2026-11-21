@@ -1,8 +1,8 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getCurrentUser } from "@/app/current-user";
 import { database, ensurePilotSchema } from "@/db/pilot";
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
   const body = await request.json() as Record<string, unknown>;
   const caseNumber = Number(body.caseNumber);

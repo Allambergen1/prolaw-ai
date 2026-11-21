@@ -13,6 +13,27 @@ type Profile = { userId: string; email: string; fullName: string; university: st
 type AccountState = { loading: boolean; authenticated: boolean; profile: Profile | null; user: { fullName: string; email: string } | null; isAdmin: boolean };
 const emptyProgress: ProgressState = { tests: [], completedCases: [] };
 const labels: Record<TestMode, string> = { general: "Criminal Law · General Part", special: "Criminal Law · Special Part", mixed: "Mixed assessment" };
+const LOCAL_PROFILE_KEY = "prolaw-ai-student-profile.txt";
+
+function loadLocalProfile(): Profile | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = localStorage.getItem(LOCAL_PROFILE_KEY);
+    if (!saved) return null;
+    const values = Object.fromEntries(saved.split("\n").map(line => {
+      const separator = line.indexOf(":");
+      return separator > 0 ? [line.slice(0, separator).trim(), line.slice(separator + 1).trim()] : ["", ""];
+    }));
+    if (!values.fullName || !values.email) return null;
+    return { userId: "local-pilot", email: values.email, fullName: values.fullName, university: values.university ?? "", faculty: values.faculty ?? "", course: values.course ?? "", groupName: values.groupName ?? "", role: "student" };
+  } catch { return null; }
+}
+
+function saveLocalProfile(profile: Profile) {
+  const text = [`fullName: ${profile.fullName}`, `email: ${profile.email}`, `university: ${profile.university}`, `faculty: ${profile.faculty}`, `course: ${profile.course}`, `groupName: ${profile.groupName}`, `savedAt: ${new Date().toISOString()}`].join("\n");
+  localStorage.setItem(LOCAL_PROFILE_KEY, text);
+  return text;
+}
 
 function shuffle<T>(items: T[]) {
   const copy = [...items];
@@ -40,9 +61,14 @@ export default function Home() {
     localStorage.setItem("prolaw-ai-progress-v1", JSON.stringify(next));
   };
   const refreshAccount = async () => {
+    const localProfile = loadLocalProfile();
     try {
       const response = await fetch("/api/me");
-      if (!response.ok) { setAccount({ loading: false, authenticated: false, profile: null, user: null, isAdmin: false }); return; }
+      if (!response.ok) {
+        if (localProfile) setAccount({ loading: false, authenticated: true, profile: localProfile, user: { fullName: localProfile.fullName, email: localProfile.email }, isAdmin: false });
+        else setAccount({ loading: false, authenticated: false, profile: null, user: null, isAdmin: false });
+        return;
+      }
       const data = await response.json() as { authenticated: boolean; profile: Profile | null; user: { fullName: string; email: string }; isAdmin: boolean };
       setAccount({ loading: false, ...data });
       const attemptsResponse = await fetch("/api/attempts");
@@ -53,7 +79,10 @@ export default function Home() {
           completedCases: [...new Set(attempts.cases.map(item => Number(item.case_number)))],
         });
       }
-    } catch { setAccount(current => ({ ...current, loading: false })); }
+    } catch {
+      if (localProfile) setAccount({ loading: false, authenticated: true, profile: localProfile, user: { fullName: localProfile.fullName, email: localProfile.email }, isAdmin: false });
+      else setAccount(current => ({ ...current, loading: false }));
+    }
   };
   useEffect(() => {
     // Initial account hydration follows the authenticated server response.
@@ -79,7 +108,7 @@ export default function Home() {
       {mobileNav && <div className="fixed inset-0 z-50 bg-[#071a35]/55 md:hidden" onClick={() => setMobileNav(false)}><aside className="h-full w-72 bg-white p-5" onClick={event => event.stopPropagation()}><div className="mb-8 flex items-center justify-between"><strong className="text-xl">Menu</strong><button aria-label="Close navigation" onClick={() => setMobileNav(false)}><X /></button></div><Navigation active={view} onNavigate={navigate} isAdmin={account.isAdmin} /></aside></div>}
       <section className="min-w-0 flex-1 p-4 md:p-8 lg:p-10">
         {view === "dashboard" && <Dashboard progress={progress} onNavigate={navigate} />}
-        {view === "profile" && <ProfileWorkspace account={account} onSaved={refreshAccount} />}
+        {view === "profile" && <ProfileWorkspace account={account} onSaved={async profile => { setAccount({ loading: false, authenticated: true, profile, user: { fullName: profile.fullName, email: profile.email }, isAdmin: profile.role === "admin" }); navigate("test"); }} />}
         {view === "admin" && account.isAdmin && <AdminWorkspace />}
         {(view === "test" || view === "case") && (!account.authenticated || !account.profile) && <AccessGate authenticated={account.authenticated} onProfile={() => navigate("profile")} />}
         {view === "test" && account.profile && <TestWorkspace onComplete={(result) => {
@@ -165,26 +194,48 @@ function CaseWorkspace({ completed, onComplete }: { completed: number[]; onCompl
   const [revealed, setRevealed] = useState(false);
   const item = legalCases[caseIndex];
   const selectCase = (index: number) => { setCaseIndex(index); setResponse(""); setRevealed(false); };
-  const reveal = () => { setRevealed(true); onComplete(item.number, response); };
-  return <div className="mx-auto max-w-6xl"><PageHeading eyebrow="Expert case library" title="Legal case studies" description="Write your qualification first, then compare it with the legal team’s model solution." /><div className="grid gap-6 lg:grid-cols-[260px_1fr]"><aside className="rounded-[24px] border border-[#d8e5f0] bg-white p-4"><p className="px-2 text-xs font-black uppercase tracking-widest text-[#0a86d2]">10 cases</p><div className="mt-3 space-y-2">{legalCases.map((legalCase, index) => <button key={legalCase.id} onClick={() => selectCase(index)} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left text-sm ${index === caseIndex ? "bg-[#e8f5fd] font-bold text-[#075da9]" : "hover:bg-[#f4f8fc]"}`}><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${completed.includes(legalCase.number) ? "bg-[#dff5e9] text-[#16815a]" : "bg-[#edf3f8]"}`}>{completed.includes(legalCase.number) ? "✓" : legalCase.number}</span><span className="line-clamp-2">{legalCase.title}</span></button>)}</div></aside><section className="rounded-[28px] border border-[#d8e5f0] bg-white p-6 shadow-sm md:p-9"><span className="text-xs font-bold uppercase tracking-widest text-[#0a82ce]">Case {item.number} of 10</span><h2 className="mt-2 text-2xl font-bold">{item.title}</h2><div className="mt-6 rounded-2xl border-l-4 border-[#0a86d2] bg-[#f2f8fd] p-5 leading-7 text-[#294866]">{item.situation}</div><h3 className="mt-7 text-lg font-bold">Question</h3><p className="mt-2 leading-7">{item.prompt}</p><label className="mt-7 block text-sm font-bold" htmlFor="case-response">Your legal reasoning</label><textarea id="case-response" value={response} onChange={event => setResponse(event.target.value)} disabled={revealed} placeholder="State the qualification, relevant Criminal Code article and your reasoning..." className="mt-2 min-h-40 w-full rounded-2xl border border-[#cfdde9] p-4 leading-6 outline-none focus:border-[#0a86d2] disabled:bg-[#f6f8fa]" />{!revealed ? <button disabled={!response.trim()} onClick={reveal} className="mt-4 w-full rounded-xl bg-[#073d82] px-5 py-3.5 font-bold text-white disabled:opacity-40">Submit and view expert solution</button> : <div className="mt-6 space-y-4"><div className="rounded-2xl border border-[#b9e5d2] bg-[#f2fbf7] p-5"><h3 className="font-bold text-[#195d45]">Expert qualification</h3><p className="mt-2 leading-7 text-[#315c4d]">{item.qualification}</p></div><div className="rounded-2xl border border-[#c9dff0] bg-[#f5faff] p-5"><h3 className="font-bold text-[#164f7d]">Legal reasoning</h3><p className="mt-2 leading-7 text-[#365b78]">{item.reasoning}</p></div><div className="flex items-center justify-between gap-3"><button disabled={caseIndex === 0} onClick={() => selectCase(caseIndex - 1)} className="flex items-center gap-2 rounded-xl border px-4 py-3 font-bold disabled:opacity-30"><ChevronLeft className="h-4 w-4" />Previous</button><button disabled={caseIndex === legalCases.length - 1} onClick={() => selectCase(caseIndex + 1)} className="flex items-center gap-2 rounded-xl bg-[#073d82] px-4 py-3 font-bold text-white disabled:opacity-30">Next case<ChevronRight className="h-4 w-4" /></button></div></div>}</section></div></div>;
+  const words = response.trim().split(/\s+/).filter(Boolean).length;
+  const responseReady = response.trim().length >= 120 && words >= 15;
+  const reveal = () => { if (!responseReady) return; setRevealed(true); onComplete(item.number, response); };
+  return <div className="mx-auto max-w-6xl"><PageHeading eyebrow="Expert case library" title="Legal case studies" description="Write your qualification first, then compare it with the legal team’s model solution." /><div className="grid gap-6 lg:grid-cols-[260px_1fr]"><aside className="rounded-[24px] border border-[#d8e5f0] bg-white p-4"><p className="px-2 text-xs font-black uppercase tracking-widest text-[#0a86d2]">10 cases</p><div className="mt-3 space-y-2">{legalCases.map((legalCase, index) => <button key={legalCase.id} onClick={() => selectCase(index)} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left text-sm ${index === caseIndex ? "bg-[#e8f5fd] font-bold text-[#075da9]" : "hover:bg-[#f4f8fc]"}`}><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${completed.includes(legalCase.number) ? "bg-[#dff5e9] text-[#16815a]" : "bg-[#edf3f8]"}`}>{completed.includes(legalCase.number) ? "✓" : legalCase.number}</span><span className="line-clamp-2">{legalCase.title}</span></button>)}</div></aside><section className="rounded-[28px] border border-[#d8e5f0] bg-white p-6 shadow-sm md:p-9"><span className="text-xs font-bold uppercase tracking-widest text-[#0a82ce]">Case {item.number} of 10</span><h2 className="mt-2 text-2xl font-bold">{item.title}</h2><div className="mt-6 rounded-2xl border-l-4 border-[#0a86d2] bg-[#f2f8fd] p-5 leading-7 text-[#294866]">{item.situation}</div><h3 className="mt-7 text-lg font-bold">Question</h3><p className="mt-2 leading-7">{item.prompt}</p><label className="mt-7 block text-sm font-bold" htmlFor="case-response">Your legal reasoning</label><textarea id="case-response" value={response} onChange={event => setResponse(event.target.value)} disabled={revealed} placeholder="State the qualification, relevant Criminal Code article and your reasoning..." className="mt-2 min-h-40 w-full rounded-2xl border border-[#cfdde9] p-4 leading-6 outline-none focus:border-[#0a86d2] disabled:bg-[#f6f8fa]" />{!revealed ? <><div className={`mt-2 flex justify-between text-sm ${responseReady ? "text-[#16815a]" : "text-[#8a6070]"}`}><span>{responseReady ? "Response is detailed enough for review." : "Write at least 120 characters and 15 words before submitting."}</span><span>{response.trim().length}/120</span></div><button disabled={!responseReady} onClick={reveal} className="mt-4 w-full rounded-xl bg-[#073d82] px-5 py-3.5 font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Submit and view expert solution</button></> : <div className="mt-6 space-y-4"><div className="rounded-2xl border border-[#b9e5d2] bg-[#f2fbf7] p-5"><h3 className="font-bold text-[#195d45]">Expert qualification</h3><p className="mt-2 leading-7 text-[#315c4d]">{item.qualification}</p></div><div className="rounded-2xl border border-[#c9dff0] bg-[#f5faff] p-5"><h3 className="font-bold text-[#164f7d]">Legal reasoning</h3><p className="mt-2 leading-7 text-[#365b78]">{item.reasoning}</p></div><div className="rounded-2xl border border-dashed border-[#8cc9ea] bg-gradient-to-r from-[#edf8ff] to-[#f5fbff] p-5"><div className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-[#0879c8]"/><h3 className="font-bold text-[#164f7d]">AI legal analysis — planned feature</h3></div><p className="mt-2 leading-7 text-[#47677f]">A future release will compare the student’s reasoning with the expert model, identify missing legal elements and provide personalised recommendations. This feature is not active in the current MVP.</p></div><div className="flex items-center justify-between gap-3"><button disabled={caseIndex === 0} onClick={() => selectCase(caseIndex - 1)} className="flex items-center gap-2 rounded-xl border px-4 py-3 font-bold disabled:opacity-30"><ChevronLeft className="h-4 w-4" />Previous</button><button disabled={caseIndex === legalCases.length - 1} onClick={() => selectCase(caseIndex + 1)} className="flex items-center gap-2 rounded-xl bg-[#073d82] px-4 py-3 font-bold text-white disabled:opacity-30">Next case<ChevronRight className="h-4 w-4" /></button></div></div>}</section></div></div>;
 }
 
 function AccessGate({ authenticated, onProfile }: { authenticated: boolean; onProfile: () => void }) {
   return <div className="mx-auto max-w-2xl rounded-[28px] border border-[#d8e5f0] bg-white p-8 text-center shadow-sm"><Users className="mx-auto h-12 w-12 text-[#0a86d2]" /><h1 className="mt-5 text-3xl font-black text-[#0a2e61]">Complete your student profile</h1><p className="mx-auto mt-3 max-w-lg leading-7 text-[#60738a]">{authenticated ? "Add your university, faculty, course and group before starting the pilot. Your assessment history will then be saved securely." : "Create a pilot profile so ProLaw-AI can identify you and save your test attempts, case activity and learning progress."}</p><button onClick={onProfile} className="mt-6 rounded-xl bg-[#073d82] px-6 py-3.5 font-bold text-white">{authenticated ? "Complete profile" : "Create pilot profile"}</button></div>;
 }
 
-function ProfileWorkspace({ account, onSaved }: { account: AccountState; onSaved: () => Promise<void> }) {
+function ProfileWorkspace({ account, onSaved }: { account: AccountState; onSaved: (profile: Profile) => Promise<void> }) {
   const [form, setForm] = useState({ fullName: account.profile?.fullName ?? account.user?.fullName ?? "", email: account.profile?.email ?? account.user?.email ?? "", university: account.profile?.university ?? "", faculty: account.profile?.faculty ?? "", course: account.profile?.course ?? "", groupName: account.profile?.groupName ?? "" });
   const [status, setStatus] = useState("");
   const save = async () => {
     setStatus("Saving...");
-    const response = await fetch("/api/me", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
-    if (!response.ok) { const data = await response.json() as { error?: string }; setStatus(data.error ?? "Could not save profile"); return; }
-    await onSaved();
-    setStatus("Profile saved");
+    if (!form.fullName.trim() || !form.email.includes("@") || !form.university.trim() || !form.faculty.trim() || !form.course.trim() || !form.groupName.trim()) { setStatus("Please complete every field."); return; }
+    const fallbackProfile: Profile = { userId: account.profile?.userId ?? "local-pilot", email: form.email.trim(), fullName: form.fullName.trim(), university: form.university.trim(), faculty: form.faculty.trim(), course: form.course.trim(), groupName: form.groupName.trim(), role: account.profile?.role ?? "student" };
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch("/api/me", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form), signal: controller.signal });
+      if (response.ok) {
+        const data = await response.json() as { profile: Profile };
+        saveLocalProfile(data.profile);
+        setStatus("Profile saved. Opening assessment...");
+        await onSaved(data.profile);
+        return;
+      }
+    } catch { /* Temporary browser storage keeps the pilot usable. */ }
+    finally { window.clearTimeout(timeout); }
+    saveLocalProfile(fallbackProfile);
+    setStatus("Saved temporarily. Opening assessment...");
+    await onSaved(fallbackProfile);
+  };
+  const downloadProfile = () => {
+    const profile: Profile = account.profile ?? { userId: "local-pilot", role: "student", ...form };
+    const text = saveLocalProfile(profile);
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "prolaw-ai-student-profile.txt"; anchor.click(); URL.revokeObjectURL(url);
   };
   const field = (key: keyof typeof form, label: string, placeholder: string) => <label className="block"><span className="text-sm font-bold">{label}</span><input value={form[key]} onChange={event => setForm({ ...form, [key]: event.target.value })} placeholder={placeholder} className="mt-2 w-full rounded-xl border border-[#cfdde9] px-4 py-3 outline-none focus:border-[#0a86d2]" /></label>;
-  return <div className="mx-auto max-w-3xl"><PageHeading eyebrow="Student identity" title={account.authenticated ? "Your profile" : "Create your pilot profile"} description="These details identify your results and help the pilot team analyse learning progress by university, faculty, course and group." /><div className="rounded-[28px] border border-[#d8e5f0] bg-white p-6 shadow-sm md:p-9"><div className="grid gap-5 md:grid-cols-2">{field("fullName", "Full name", "Student name")}{field("email", "Email", "student@example.com")}{field("university", "University", "Berdakh Karakalpak State University")}{field("faculty", "Faculty", "Faculty of Law")}{field("course", "Course", "2nd year")}{field("groupName", "Group", "LAW-201")}</div><div className="mt-7 flex flex-wrap items-center gap-4"><button onClick={save} className="rounded-xl bg-[#073d82] px-6 py-3.5 font-bold text-white">{account.authenticated ? "Save profile" : "Create profile and continue"}</button><span className="text-sm font-semibold text-[#16815a]">{status}</span>{account.profile && account.user && !account.user.email.startsWith("pilot:") && <a href="/signout-with-chatgpt?return_to=/" className="ml-auto text-sm font-bold text-[#9a3542]">Sign out</a>}</div>{!account.authenticated && <p className="mt-5 text-xs leading-5 text-[#71859a]">By continuing, the pilot stores your profile and learning activity for educational evaluation.</p>}</div></div>;
+  return <div className="mx-auto max-w-3xl"><PageHeading eyebrow="Student identity" title={account.authenticated ? "Your profile" : "Create your pilot profile"} description="These details identify your results and help the pilot team analyse learning progress by university, faculty, course and group." /><div className="rounded-[28px] border border-[#d8e5f0] bg-white p-6 shadow-sm md:p-9"><div className="grid gap-5 md:grid-cols-2">{field("fullName", "Full name", "Student name")}{field("email", "Email", "student@example.com")}{field("university", "University", "Berdakh Karakalpak State University")}{field("faculty", "Faculty", "Faculty of Law")}{field("course", "Course", "2nd year")}{field("groupName", "Group", "LAW-201")}</div><div className="mt-7 flex flex-wrap items-center gap-4"><button onClick={save} className="rounded-xl bg-[#073d82] px-6 py-3.5 font-bold text-white">{account.authenticated ? "Save profile and continue" : "Create profile and continue"}</button><button onClick={downloadProfile} className="rounded-xl border border-[#b9cee0] px-5 py-3.5 text-sm font-bold text-[#075da9]">Download profile .txt</button><span className="text-sm font-semibold text-[#16815a]">{status}</span>{account.profile && account.user && !account.user.email.startsWith("pilot:") && <a href="/signout-with-chatgpt?return_to=/" className="ml-auto text-sm font-bold text-[#9a3542]">Sign out</a>}</div><p className="mt-5 text-xs leading-5 text-[#71859a]">If server saving is unavailable, the profile is stored temporarily in this browser as text so the assessment can continue.</p></div></div>;
 }
 
 type AdminData = { totals: { students: number; tests: number; cases: number; average_score: number }; students: Array<Record<string, unknown>> };
